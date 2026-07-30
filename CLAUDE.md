@@ -34,6 +34,9 @@ generates/maintains `STM32-for-VSCode.config.yaml`, `STM32Make.make`, `openocd.c
 - Debug: VSCode launch configs "Debug STM32" / "Attach STM32" (cortex-debug + OpenOCD, target `stm32c071`).
 - Build output goes to `build/debug/` (`.elf`, `.hex`, `.bin`, `.map`, per-source `.o`/`.d`/`.lst`). Do not hand-edit
   these — they're regenerated on every build.
+- Released versions: tag the commit (`vX.Y.Z`) and attach the `.elf` (debug symbols) and `.hex` (self-addressed,
+  portable for reflashing) as GitHub Release assets rather than committing binaries into the tree. `releases/` is a
+  gitignored local scratch spot for staging those two files before uploading them to the Release.
 - There is a plain `Makefile` (CubeIDE-flavored) mirroring `STM32Make.make` (VSCode-extension-flavored); both build
   the same `C_SOURCES`/`ASM_SOURCES` list and should be kept in sync if sources or defines change. Prefer editing
   `STM32-for-VSCode.config.yaml` and letting the extension regenerate `STM32Make.make`, and regenerating `Makefile`
