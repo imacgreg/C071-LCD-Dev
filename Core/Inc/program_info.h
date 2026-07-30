@@ -37,6 +37,10 @@
 	*     pin via a solder bridge/jumper, which prevented that line from
 	*     driving correctly. Isolated by removing the jumper; ST-Link
 	*     flash/debug and UART printf both continue to work without it.
+	* Version -201: Cleanup pass, no functional change. Removed leftover
+	* F-series detritus (dead SafeOutputPortE function, stale Port E/PC8/PC9
+	* comments, unused lcd_data globals/locals) and the printf/heartbeat
+	* diagnostics added during hardware bring-up.
   *
   * Future Enhancements:
   *
@@ -47,7 +51,7 @@
 // Version identification using X.Y.Z (Major.Minor.Patch) Semantic Versioning method
 #define VER_MAJOR 0
 #define VER_MINOR 2
-#define VER_PATCH 0
+#define VER_PATCH 1
 
 
 

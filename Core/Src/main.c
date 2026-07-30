@@ -55,11 +55,9 @@ typedef struct{
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-uint32_t	lcd_data=0;
-
 const SafeGPIO_t LCDPins[] =
 {
-  {GPIOB, GPIO_PIN_0},  //updated for Nucleo+Motor Dev hardware
+  {GPIOB, GPIO_PIN_0},
   {GPIOB, GPIO_PIN_2},
   {GPIOB, GPIO_PIN_3},
   {GPIOB, GPIO_PIN_4},
@@ -88,35 +86,8 @@ void SafeGPIOBus_Write(SafeGPIOBus_t *bus, uint32_t data);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+// LCD driver derived from NewHaven Display (NHD-0440AZ) example code:
 // https://support.newhavendisplay.com/hc/en-us/articles/4413994414231-NHD-0440AZ
-// All NHD-0440AZ code derived from NewHaven Display example code. Modified to
-// work with STM32G4 (tested with STM32F439 Nucleo board).
-// Purpose was to show basic functionality with GPIO interface to STM32.
-// Port E8-15 is 8-bit data; PC6:ENB1, PC7:ENB2, PC8:RS, PC9:RW (all 5V tolerant).
-// All GPIO set as open-drain outputs with extrenal 5V pull-ups.
-
-// Configures PortE (b8-15) for safe data output to 5V LCD. Low, GPIO set as output low. 
-// High, pin ast as input with external 5V pull-up.
-
-// void SafeOutputPortE(uint32_t Data)  //leftover from register control, 446 version
-// {
-// 	uint16_t Count, BitMask;
-	
-// 	Count = 0;
-// 	GPIOE->MODER = 0;	// By default, set all bits to input mode (5V safe, only change if output bit is low)
-// 	GPIOE->BSRR = 0xFF000000;	// Set ODR bits 8-15 to zero (5V safe, low output condition)
-// 	BitMask = 0x0100;		// Identifies which bit is being checked (starting with bit8)
-
-// 	while (Count < 8) 	// Cycle through bits 8-15
-// 	{
-// 		if (!((Data & 0xFFFF) & BitMask))	// Only take action when output bit is low
-// 		{
-// 			GPIOE->MODER = GPIOE->MODER | (0x01 << (2*Count+16));	// Set current bit GPIO mode to output
-// 		}
-// 		BitMask = BitMask << 1;	// Slide bit over for next one
-// 		Count++;	// Increment bit counter
-// 	}
-// }
 
 // Busy-wait of a few hundred ns to ~1us at the ~12MHz core clock configured in
 // SystemClock_Config (HSI/4). Cortex-M0+ has no DWT cycle counter, so this is a
@@ -144,15 +115,9 @@ static void LCD_Strobe(GPIO_TypeDef *port, uint16_t pin)
 }
 
 void command1(uint8_t InputData)	//command for LCD lines 1&2
-{		
-	uint32_t	lcd_data;
+{
+	SafeGPIOBus_Write(&LCDBus, InputData);
 
-//	 Output data on PortE, b8-15
-	// lcd_data = InputData << 8;	// Shift data to b8-15
-  lcd_data = InputData; //no shift for generic version
-	// SafeOutputPortE (lcd_data);	// 5V safe output
-  SafeGPIOBus_Write(&LCDBus, lcd_data);
-	
 //	Set instruction register (RS) low for command
 	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_RESET);
 
@@ -164,15 +129,9 @@ void command1(uint8_t InputData)	//command for LCD lines 1&2
 }
 
 void command2(uint8_t InputData)	//command for LCD lines 3&4
-{		
-	uint32_t	lcd_data;
+{
+	SafeGPIOBus_Write(&LCDBus, InputData);
 
-//	 Output data on PortE, b8-15
-	// lcd_data = InputData << 8;	// Shift data to b8-15
-  lcd_data = InputData; //no shift for generic version
-	// SafeOutputPortE (lcd_data);	// 5V safe output
-  SafeGPIOBus_Write(&LCDBus, lcd_data);
-	
 //	Set instruction register (RS) low for command
 	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_RESET);
 
@@ -185,13 +144,7 @@ void command2(uint8_t InputData)	//command for LCD lines 3&4
 
 void write1(uint8_t InputData)	//write data on lines 1&2
 {
-	uint32_t	lcd_data;
-
-//	 Output data on PortE, b8-15
-	// lcd_data = InputData << 8;	// Shift data to b8-15
-  lcd_data = InputData; //no shift for generic version
-	// SafeOutputPortE (lcd_data);	// 5V safe output
-	SafeGPIOBus_Write(&LCDBus, lcd_data);
+	SafeGPIOBus_Write(&LCDBus, InputData);
 
 //	Set instruction register (RS) high for data
 	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_SET);
@@ -205,13 +158,8 @@ void write1(uint8_t InputData)	//write data on lines 1&2
 
 void write2(uint8_t InputData)	//write data on lines 3&4
 {
-	uint32_t	lcd_data;
+	SafeGPIOBus_Write(&LCDBus, InputData);
 
-//	 Output data on PortE, b8-15
-	// lcd_data = InputData << 8;	// Shift data to b8-15
-  lcd_data = InputData; //no shift for generic version
-	// SafeOutputPortE (lcd_data);	// 5V safe output
-	SafeGPIOBus_Write(&LCDBus, lcd_data);
 //	Set instruction register (RS) high for data
 	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_SET);
 
@@ -331,21 +279,14 @@ int main(void)
   RetargetInit(&huart2);
   printf("C071 LCD DEV\n\r");
 
-  	// Set all Port E, bits 8-15 and RS and RW low
-	// GPIOE->BSRR = 0xFF000000;	// Clear b8-15 on port E ODR  //leftover from f446
 	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin (LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET);
-	// ENB1,2 idle low; MX_GPIO_Init() already set their initial ODR state
 
   SafeGPIOBus_Init(&LCDBus, LCDPins, 8);
 
-  // All the test code does is initialize the LCD and then display data on all 4 lines
-	printf("Starting lcd_init()...\n\r");
+  // Test code: initialize the LCD and show some text on all 4 lines
 	lcd_init();
-	printf("lcd_init() done, calling display()...\n\r");
 	display("line1 test", "line 2 test.......", "line 3 tesssssssst", "and line 4");
-  
-  printf("display() done.\n\r");
 
   /* USER CODE END 2 */
 
@@ -354,8 +295,6 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-	  HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);	// heartbeat: confirms firmware is alive, not stuck/crashed
-	  HAL_Delay(500);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
