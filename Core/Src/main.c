@@ -116,58 +116,34 @@ static void LCD_Strobe(GPIO_TypeDef *port, uint16_t pin)
 
 void command1(uint8_t InputData)	//command for LCD lines 1&2
 {
-	SafeGPIOBus_Write(&LCDBus, InputData);
-
-//	Set instruction register (RS) low for command
-	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_RESET);
-
-//	Set direction register (RW) low for write
-	HAL_GPIO_WritePin (LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET);
-
-// Pulse ENB1 to strobe the data into LCD controller 1
-	LCD_Strobe(nLCD_ENB1_GPIO_Port, nLCD_ENB1_Pin);
+	SafeGPIOBus_Write(&LCDBus, InputData);  //write data to LCD bus 
+	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_RESET); //Set instr. register (RS) low for command
+	HAL_GPIO_WritePin (LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET); //Set dir. register (RW) low for write
+	LCD_Strobe(nLCD_ENB1_GPIO_Port, nLCD_ENB1_Pin); //Pulse ENB1 to strobe the data into LCD controller 1
 }
 
 void command2(uint8_t InputData)	//command for LCD lines 3&4
 {
-	SafeGPIOBus_Write(&LCDBus, InputData);
-
-//	Set instruction register (RS) low for command
-	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_RESET);
-
-//	Set direction register (RW) low for write
-	HAL_GPIO_WritePin (LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET);
-
-// Pulse ENB2 to strobe the data into LCD controller 2
-	LCD_Strobe(nLCD_ENB2_GPIO_Port, nLCD_ENB2_Pin);
+	SafeGPIOBus_Write(&LCDBus, InputData);  //write data to LCD bus
+	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_RESET); //Set instr. register (RS) low for command
+	HAL_GPIO_WritePin (LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET); //Set dir. register (RW) low for write
+	LCD_Strobe(nLCD_ENB2_GPIO_Port, nLCD_ENB2_Pin); //Pulse ENB2 to strobe the data into LCD controller 2
 }
 
 void write1(uint8_t InputData)	//write data on lines 1&2
 {
-	SafeGPIOBus_Write(&LCDBus, InputData);
-
-//	Set instruction register (RS) high for data
-	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_SET);
-
-//	Set direction register (RW) low for write
-	HAL_GPIO_WritePin (LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET);
-
-// Pulse ENB1 to strobe the data into LCD controller 1
-	LCD_Strobe(nLCD_ENB1_GPIO_Port, nLCD_ENB1_Pin);
+	SafeGPIOBus_Write(&LCDBus, InputData);  //write data to LCD bus
+	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_SET); //Set instr. register (RS) high for data
+	HAL_GPIO_WritePin (LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET); //Set dir. register (RW) low for write
+	LCD_Strobe(nLCD_ENB1_GPIO_Port, nLCD_ENB1_Pin); //Pulse ENB1 to strobe the data into LCD controller 1
 }
 
 void write2(uint8_t InputData)	//write data on lines 3&4
 {
-	SafeGPIOBus_Write(&LCDBus, InputData);
-
-//	Set instruction register (RS) high for data
-	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_SET);
-
-//	Set direction register (RW) low for write
-	HAL_GPIO_WritePin (LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET);
-
-// Pulse ENB2 to strobe the data into LCD controller 2
-	LCD_Strobe(nLCD_ENB2_GPIO_Port, nLCD_ENB2_Pin);
+	SafeGPIOBus_Write(&LCDBus, InputData);  //write data to LCD bus
+	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_SET); //Set instr. register (RS) high for data
+	HAL_GPIO_WritePin (LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET); //Set dir. register (RW) low for write
+	LCD_Strobe(nLCD_ENB2_GPIO_Port, nLCD_ENB2_Pin); //Pulse ENB2 to strobe the data into LCD controller 2
 }
 
 void lcd_init()
