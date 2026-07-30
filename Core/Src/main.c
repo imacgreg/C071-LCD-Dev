@@ -24,27 +24,11 @@
 #include <stdio.h>
 #include "retarget.h"
 #include "program_info.h"
+#include "lcd_NHD-0440AZ.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef struct{   //for generic port usae
-  GPIO_TypeDef *port;
-  uint16_t      pin;        // HAL GPIO_PIN_x mask
-} SafeGPIO_t;
-
-typedef struct{
-  const SafeGPIO_t *pins;
-  uint8_t           count;
-} SafeGPIOBus_t;
-
-typedef enum { LCD_CTRL_1 = 0, LCD_CTRL_2 = 1, LCD_NUM_CTRL } LCD_Controller_t;
-
-typedef struct{
-  uint8_t          data;
-  uint8_t          rs;    // 0 = command, 1 = data/write (RW is always write, not stored)
-  LCD_Controller_t ctrl;
-} LCD_Op_t;
 
 /* USER CODE END PTD */
 
@@ -63,33 +47,7 @@ typedef struct{
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-const SafeGPIO_t LCDPins[] =
-{
-  {GPIOB, GPIO_PIN_0},
-  {GPIOB, GPIO_PIN_2},
-  {GPIOB, GPIO_PIN_3},
-  {GPIOB, GPIO_PIN_4},
-  {GPIOB, GPIO_PIN_5},
-  {GPIOB, GPIO_PIN_11},
-  {GPIOC, GPIO_PIN_4},
-  {GPIOC, GPIO_PIN_5},
-};
 
-SafeGPIOBus_t LCDBus;
-
-#define LCD_QUEUE_SIZE 256   // entries, not bytes; comfortably covers a full 160-char display() burst
-
-static volatile LCD_Op_t lcd_queue[LCD_QUEUE_SIZE];
-static volatile uint16_t lcd_queue_head = 0;   // producer-owned (command1/2, write1/2)
-static volatile uint16_t lcd_queue_tail = 0;   // consumer-owned (LCD_Service, runs in SysTick ISR)
-static volatile uint32_t lcd_busy_until[LCD_NUM_CTRL]; // HAL_GetTick() timestamps, one per controller
-
-// Reuses the existing SafeGPIO_t struct already used for LCDPins[]
-static const SafeGPIO_t lcd_enb_pin[LCD_NUM_CTRL] =
-{
-  { nLCD_ENB1_GPIO_Port, nLCD_ENB1_Pin },
-  { nLCD_ENB2_GPIO_Port, nLCD_ENB2_Pin },
-};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -97,175 +55,11 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
-void SafeGPIOBus_Init(SafeGPIOBus_t *bus,
-                      const SafeGPIO_t *pinList,
-                      uint8_t count);
-static inline void GPIO_SetOutput(GPIO_TypeDef *port, uint16_t pin);
-static inline void GPIO_SetInput(GPIO_TypeDef *port, uint16_t pin);
-void SafeGPIOBus_Write(SafeGPIOBus_t *bus, uint32_t data);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-// LCD driver derived from NewHaven Display (NHD-0440AZ) example code:
-// https://support.newhavendisplay.com/hc/en-us/articles/4413994414231-NHD-0440AZ
-
-// Busy-wait of a few hundred ns to ~1us at the ~12MHz core clock configured in
-// SystemClock_Config (HSI/4). Cortex-M0+ has no DWT cycle counter, so this is a
-// calibrated NOP-count loop rather than a precise timer, with margin above the
-// HD44780's ~450-500ns minimum enable pulse width.
-static inline void LCD_ShortDelay(void)
-{
-	for (volatile uint32_t i = 0; i < 20; i++) { __NOP(); }
-}
-
-// Strobes an LCD controller's enable line: idle low, pulse high, back to idle low.
-// Replaces the original F-series TIM8 one-pulse-mode PWM trick with plain GPIO.
-// Only covers the E pulse width itself - the required post-command settle time is
-// handled by LCD_Service()'s lcd_busy_until scheduling below, not blocked on here.
-static void LCD_Strobe(GPIO_TypeDef *port, uint16_t pin)
-{
-	HAL_GPIO_WritePin(port, pin, GPIO_PIN_SET);
-	LCD_ShortDelay();
-	HAL_GPIO_WritePin(port, pin, GPIO_PIN_RESET);
-}
-
-// Producer side: enqueues a command/data byte for a controller and returns immediately.
-// Called only from main-line code (never from LCD_Service/the SysTick ISR), so it's the
-// sole writer of lcd_queue_head - matches the single-writer-per-index scheme retarget.c
-// already uses for its UART TX/RX ring buffers. Silently drops on a full queue, same
-// policy as retarget.c's RX overflow handling.
-static int LCD_Enqueue(LCD_Controller_t ctrl, uint8_t rs, uint8_t data)
-{
-	uint16_t next_head = (lcd_queue_head + 1) % LCD_QUEUE_SIZE;
-	if (next_head == lcd_queue_tail) { return 0; }	// queue full, drop
-	lcd_queue[lcd_queue_head].data = data;
-	lcd_queue[lcd_queue_head].rs   = rs;
-	lcd_queue[lcd_queue_head].ctrl = ctrl;
-	lcd_queue_head = next_head;
-	return 1;
-}
-
-// Consumer side: call once per SysTick tick (wired up in stm32c0xx_it.c's SysTick_Handler).
-// Drains one ready queue entry per call, respecting each controller's independent
-// instruction-execution settle time (~37-43us typical, ~1.52ms after Clear Display/
-// Return Home - rounded up to the nearest 1ms tick since that's this design's timing
-// granularity).
-void LCD_Service(void)
-{
-	if (lcd_queue_head == lcd_queue_tail) { return; }	// empty
-
-	LCD_Op_t op = lcd_queue[lcd_queue_tail];	// struct copy, single volatile read
-	if (HAL_GetTick() < lcd_busy_until[op.ctrl]) { return; }	// target controller still settling
-
-	SafeGPIOBus_Write(&LCDBus, op.data);
-	HAL_GPIO_WritePin(LCD_RS_GPIO_Port, LCD_RS_Pin, op.rs ? GPIO_PIN_SET : GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET);
-	LCD_Strobe(lcd_enb_pin[op.ctrl].port, lcd_enb_pin[op.ctrl].pin);
-
-	int long_settle = (op.rs == 0) && (op.data == 0x01 || (op.data & 0xFE) == 0x02); // Clear Display / Return Home
-	lcd_busy_until[op.ctrl] = HAL_GetTick() + (long_settle ? 2 : 1);
-
-	lcd_queue_tail = (lcd_queue_tail + 1) % LCD_QUEUE_SIZE;
-}
-
-// True once the queue is empty and both controllers are past their settle time - i.e.
-// everything enqueued so far has actually been written to the LCD. Not used yet; a
-// hook for the future non-blocking lcd_init() rework.
-int LCD_Idle(void)
-{
-	return (lcd_queue_head == lcd_queue_tail)
-	    && HAL_GetTick() >= lcd_busy_until[LCD_CTRL_1]
-	    && HAL_GetTick() >= lcd_busy_until[LCD_CTRL_2];
-}
-
-void command1(uint8_t InputData)	//command for LCD lines 1&2
-{
-	LCD_Enqueue(LCD_CTRL_1, 0, InputData);
-}
-
-void command2(uint8_t InputData)	//command for LCD lines 3&4
-{
-	LCD_Enqueue(LCD_CTRL_2, 0, InputData);
-}
-
-void write1(uint8_t InputData)	//write data on lines 1&2
-{
-	LCD_Enqueue(LCD_CTRL_1, 1, InputData);
-}
-
-void write2(uint8_t InputData)	//write data on lines 3&4
-{
-	LCD_Enqueue(LCD_CTRL_2, 1, InputData);
-}
-
-void lcd_init()
-{
-	HAL_Delay(15);			//wait 15ms after power up
-	command1(0x30);			//wake up controller 1
-	HAL_Delay(5);				//wait 5ms
-	command2(0x30);			//wake up controller 2
-	HAL_Delay(5);				//wait 5ms
-	command1(0x30);			//wake up again
-	HAL_Delay(1);				//wait at least 160us
-	command2(0x30);
-	HAL_Delay(1);
-	command1(0x30);			//wake up 3rd time
-	HAL_Delay(1);				//wait 160us, or you can poll the busy flag from now on
-	command2(0x30);
-	HAL_Delay(1);
-	command1(0x38);			//set interface length (8-bits, 2 lines)
-	command2(0x38);
-	command1(0x08);			//turn display off
-	command2(0x08);
-	command1(0x10);			//set cursor/display shift
-	command2(0x10);
-	command1(0x06);			//set cursor increment
-	command2(0x06);
-	command1(0x01);			//clear display
-	command2(0x01);
-//	command1(0x0F);			//turn display on (display ON, cursor ON, blinking ON)
-//	command2(0x0F);
-	command1(0x0E);			//turn display on (display ON, cursor ON, blinking OFF)
-	command2(0x0E);
-}
-
-void nextline1()
-{
-	command1(0xc0);			//set DDRAM address to 40 (line 2)
-}
-
-void nextline2()
-{
-	command2(0xc0);			//set DDRAM address to 40 (line 4)
-}
-
-// Writes up to 40 characters from text (a normal null-terminated C string) to
-// one physical line, padding any remainder with spaces. Longer strings are
-// truncated to 40 chars. text[i] is only ever read up to and including its
-// null terminator, never past it.
-static void display_line(void (*write_fn)(uint8_t), const char *text)
-{
-	int ended = 0;
-	for (int i = 0; i < 40; i++)
-	{
-		if (!ended && text[i] == '\0') { ended = 1; }
-		write_fn((uint8_t)(ended ? ' ' : text[i]));
-	}
-}
-
-// Shows one independent, ordinary C string per physical line (up to 40 chars
-// each; shorter strings are space-padded, longer ones truncated).
-void display(const char *line1, const char *line2, const char *line3, const char *line4)
-{
-	display_line(write1, line1);
-	nextline1();				//move address to line 2
-	display_line(write1, line2);
-	display_line(write2, line3);
-	nextline2();				//move address to line 4
-	display_line(write2, line4);
-}
 
 void Version_Display()	// Display firmware version and other program ID info
 {
@@ -309,25 +103,32 @@ int main(void)
   RetargetInit(&huart2);
   printf("C071 LCD DEV\n\r");
 
-	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin (LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET);
+	const LCD_Config_t lcd_config = {
+		.data = {
+			{ LCD_D0_GPIO_Port, LCD_D0_Pin }, { LCD_D1_GPIO_Port, LCD_D1_Pin },
+			{ LCD_D2_GPIO_Port, LCD_D2_Pin }, { LCD_D3_GPIO_Port, LCD_D3_Pin },
+			{ LCD_D4_GPIO_Port, LCD_D4_Pin }, { LCD_D5_GPIO_Port, LCD_D5_Pin },
+			{ LCD_D6_GPIO_Port, LCD_D6_Pin }, { LCD_D7_GPIO_Port, LCD_D7_Pin },
+		},
+		.rs   = { LCD_RS_GPIO_Port, LCD_RS_Pin },
+		.rw   = { LCD_RW_GPIO_Port, LCD_RW_Pin },
+		.enb1 = { nLCD_ENB1_GPIO_Port, nLCD_ENB1_Pin },
+		.enb2 = { nLCD_ENB2_GPIO_Port, nLCD_ENB2_Pin },
+	};
+	LCD_Init(&lcd_config);
 
-  SafeGPIOBus_Init(&LCDBus, LCDPins, 8);
-
-  // Test code: initialize the LCD and show some text on all 4 lines
-	lcd_init();
-	display("line1 test", "line 2 test.......", "line 3 tesssssssst", "and line 4");
+	// Test code: initialize the LCD and show some text on all 4 lines
+	LCD_PowerOn();
+	LCD_Display("line1 test", "line 2 test.......", "line 3 tesssssssst", "and line 4");
 
 	// Superloop counter demo: counts up once per second, shown identically on
-	// lines 1 and 3 (lines 2 and 4 keep whatever display() above put there).
+	// lines 1 and 3 (lines 2 and 4 keep whatever LCD_Display() above put there).
 	uint32_t counter_value = 0;
 	uint32_t counter_last_tick = HAL_GetTick();
 	char counter_buf[12];
 	snprintf(counter_buf, sizeof(counter_buf), "%lu", (unsigned long)counter_value);
-	command1(0x80);				//return cursor to line 1 start (DDRAM address 0)
-	display_line(write1, counter_buf);
-	command2(0x80);				//return cursor to line 3 start (DDRAM address 0)
-	display_line(write2, counter_buf);
+	LCD_DisplayLine1(counter_buf);
+	LCD_DisplayLine3(counter_buf);
 
   /* USER CODE END 2 */
 
@@ -342,10 +143,8 @@ int main(void)
 		  counter_last_tick += 1000;
 		  counter_value++;
 		  snprintf(counter_buf, sizeof(counter_buf), "%lu", (unsigned long)counter_value);
-		  command1(0x80);
-		  display_line(write1, counter_buf);
-		  command2(0x80);
-		  display_line(write2, counter_buf);
+		  LCD_DisplayLine1(counter_buf);
+		  LCD_DisplayLine3(counter_buf);
 	  }
   }
   /* USER CODE END 3 */
@@ -513,60 +312,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void SafeGPIOBus_Init(SafeGPIOBus_t *bus,
-                      const SafeGPIO_t *pinList,
-                      uint8_t count)
-{
-    bus->pins  = pinList;
-    bus->count = count;
-}
 
-static inline void GPIO_SetOutput(GPIO_TypeDef *port, uint16_t pin)
-{
-  uint32_t pos = __builtin_ctz(pin);        // convert GPIO_PIN_x into bit number
-
-  port->MODER &= ~(3UL << (2 * pos));
-  port->MODER |=  (1UL << (2 * pos));       // 01 = output
-}
-
-static inline void GPIO_SetInput(GPIO_TypeDef *port, uint16_t pin)
-{
-  uint32_t pos = __builtin_ctz(pin);
-  port->MODER &= ~(3UL << (2 * pos));       // 00 = input
-}
-
-/**
-  * @brief  Generic bus safe output
-  * @retval None
-  */
-void SafeGPIOBus_Write(SafeGPIOBus_t *bus, uint32_t data) 
-{
-  GPIO_TypeDef *port;
-  uint16_t pin;
-
-  for (uint32_t i = 0; i < bus->count; i++){  //set every bus pin to input
-    port = bus->pins[i].port;
-    pin  = bus->pins[i].pin;
-
-    GPIO_SetInput(port, pin);
-  }
-
-  for (uint32_t i = 0; i < bus->count; i++){  //clear every output latch
-    port = bus->pins[i].port;
-    pin  = bus->pins[i].pin;
-
-    port->BSRR = ((uint32_t)pin << 16);
-  }
-
-  for (uint32_t i = 0; i < bus->count; i++){  //make only '0' bits outputs, '1' remain inputs (ext p/u)
-    if (!(data & (1U << i))){
-      port = bus->pins[i].port;
-      pin  = bus->pins[i].pin;
-
-      GPIO_SetOutput(port, pin);
-    }
-  }
-}
 /* USER CODE END 4 */
 
 /**

@@ -22,6 +22,7 @@
 #include "stm32c0xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "lcd_NHD-0440AZ.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/

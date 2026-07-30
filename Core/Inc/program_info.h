@@ -74,6 +74,17 @@
 	* projects rather than hand-copied/adapted each time. Will need a public
 	* init/setup function taking the project's GPIO pin/port wiring, called
 	* after peripheral init, since pin assignments are project-specific.
+	* Version 1.2.1: Extracted the driver into Core/Src+Inc/lcd_NHD-0440AZ.c/.h
+	* (named for the actual LCD part number). Public API renamed to a
+	* consistent LCD_ prefix (command1->LCD_Command1, write1->LCD_Write1,
+	* display->LCD_Display, nextline1->LCD_NextLine1, lcd_init->LCD_PowerOn -
+	* renamed to avoid colliding with the new LCD_Init). Added LCD_Init(),
+	* which takes an LCD_Config_t of GPIO port/pin assignments and configures
+	* their modes itself (doesn't depend on the host project's CubeMX
+	* MX_GPIO_Init() having already done so), and LCD_DisplayLine1..4() for
+	* single-line updates (used by main.c's counter demo). Behavior is
+	* otherwise unchanged - still 2 controllers / 4 lines of 40 chars, only
+	* the pin wiring is now configurable. Verified on hardware: no regression.
   *
   * Future Enhancements:
   *
@@ -84,7 +95,7 @@
 // Version identification using X.Y.Z (Major.Minor.Patch) Semantic Versioning method
 #define VER_MAJOR 1
 #define VER_MINOR 2
-#define VER_PATCH 0
+#define VER_PATCH 1
 
 
 

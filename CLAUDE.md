@@ -10,12 +10,12 @@ interface (8 data lines D0-D7, RS, RW, and two active-low enable lines `nLCD_ENB
 HD44780-style LCD controllers muxed onto one shared bus, together forming a 40x4 character display) plus USART2
 and the two Nucleo user LEDs (LD1/LD2).
 
-The LCD bring-up code in [Core/Src/main.c](Core/Src/main.c) is working on real hardware (see
-[Core/Inc/program_info.h](Core/Inc/program_info.h) for the bring-up changelog). It's still test/demo code, not a
-general-purpose LCD driver library: `command1`/`command2` send instruction bytes and `write1`/`write2` send
-character data to controller 1 (lines 1-2) and controller 2 (lines 3-4) respectively; `display()` takes one
-plain C string per physical line (space-padded/truncated to 40 chars each) and writes all four. The 8-bit data
-bus and RS/RW/ENB1/ENB2 are bit-banged via plain GPIO — no timer or DMA is used for LCD timing.
+The LCD driver itself lives in [Core/Src/lcd_NHD-0440AZ.c](Core/Src/lcd_NHD-0440AZ.c) /
+[Core/Inc/lcd_NHD-0440AZ.h](Core/Inc/lcd_NHD-0440AZ.h) — a standalone, portable module (see that section below).
+[Core/Src/main.c](Core/Src/main.c) is just this project's test/demo code wiring the module up to its actual pin
+assignments and showing a counter demo; see [Core/Inc/program_info.h](Core/Inc/program_info.h) for the full
+bring-up changelog. The 8-bit data bus and RS/RW/ENB1/ENB2 are bit-banged via plain GPIO — no timer or DMA is
+used for LCD timing.
 
 Hardware note: Nucleo PB3 (wired here as `LCD_D2`) is also the board's TRACESWO debug pin, connected via a
 solder bridge/jumper. That jumper had to be removed to let PB3 drive the LCD data line correctly — ST-Link
@@ -44,7 +44,10 @@ generates/maintains `STM32-for-VSCode.config.yaml`, `STM32Make.make`, `openocd.c
 - **Do not manually add new `Core/Src/*.c` files to `Makefile` / `STM32Make.make`'s source lists.** The STM32 for
   VSCode extension auto-discovers sources via the `sourceFiles`/`includeDirectories` globs in
   `STM32-for-VSCode.config.yaml` (which already include `Core/Src/**` and `Core/Inc/**`), and regenerates
-  `STM32Make.make` on build. Just drop new `.c`/`.h` files into `Core/Src`/`Core/Inc` and build.
+  `STM32Make.make` on build. Just drop new `.c`/`.h` files into `Core/Src`/`Core/Inc` and build. Note this
+  regeneration is done by the extension's own "Build STM" task specifically — invoking `make -f STM32Make.make`
+  directly from a plain shell will fail to link a newly-added source file until either the VSCode task has run
+  once, or the file is temporarily added to `C_SOURCES` by hand for that one build.
 - No test suite exists in this repo (embedded firmware with no host-side test harness).
 
 ## Architecture
@@ -57,8 +60,19 @@ generates/maintains `STM32-for-VSCode.config.yaml`, `STM32Make.make`, `openocd.c
   `nLCD_ENB1_Pin`, `nLCD_ENB2_Pin`, `LD1_Pin`, `LD2_Pin`) — use these symbolic names rather than raw GPIO pin
   numbers when writing LCD driver code.
 - **`Core/Src/main.c`** contains `SystemClock_Config` (HSI, no PLL), `MX_GPIO_Init`, `MX_USART2_UART_Init`
-  (115200 8N1), and the LCD bring-up/demo code in the `USER CODE` blocks (`command1`/`command2`, `write1`/`write2`,
-  `lcd_init`, `display`, and the `LCD_Strobe`/`SafeGPIOBus_Write` GPIO helpers).
+  (115200 8N1), and the application code in the `USER CODE` blocks: builds an `LCD_Config_t` from this project's
+  pin macros, calls `LCD_Init()`/`LCD_PowerOn()`/`LCD_Display()` from the LCD module (see below), and runs a
+  superloop counter demo on lines 1/3 via `LCD_DisplayLine1()`/`LCD_DisplayLine3()`.
+- **`Core/Inc/lcd_NHD-0440AZ.h`** / **`Core/Src/lcd_NHD-0440AZ.c`** are the portable LCD driver module — written to
+  be dropped into other STM32 projects using the same Newhaven NHD-0440AZ-style 40x4 display (two HD44780
+  controllers muxed onto one shared 8-bit bus) without modification. A host project builds an `LCD_Config_t`
+  (GPIO port/pin for each of D0-D7, RS, RW, ENB1, ENB2) and calls `LCD_Init(&config)` after its own GPIO port
+  clocks are enabled — `LCD_Init()` configures pin modes itself, it doesn't rely on the host's CubeMX-generated
+  `MX_GPIO_Init()` having already done so. `LCD_PowerOn()` sends the HD44780 power-on/reset sequence (blocking,
+  via `HAL_Delay`). `LCD_Command1`/`LCD_Command2`/`LCD_Write1`/`LCD_Write2` and `LCD_Display*` are non-blocking:
+  they enqueue onto an internal ring buffer, and the host project must call `LCD_Service()` at least once per
+  SysTick tick (wired into `stm32c0xx_it.c`'s `SysTick_Handler` here) to actually drain it — see the "non-blocking
+  write path" entry in `program_info.h`'s changelog for why.
 - **`Drivers/CMSIS`** and **`Drivers/STM32C0xx_HAL_Driver`** are the vendored ARM CMSIS and ST HAL sources — treat as
   third-party/vendor code, not to be modified for feature work.
 - **`startup_stm32c071xx.s`** / **`STM32C071XX_FLASH.ld`** are the CubeMX-generated startup assembly and linker

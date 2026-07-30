@@ -75,6 +75,7 @@ endif
 ######################################
 # C sources
 C_SOURCES =  \
+Core/Src/lcd_NHD-0440AZ.c \
 Core/Src/main.c \
 Core/Src/retarget.c \
 Core/Src/stm32c0xx_hal_msp.c \
