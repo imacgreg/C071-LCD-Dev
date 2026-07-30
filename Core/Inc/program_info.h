@@ -62,6 +62,13 @@
 	* Version 1.1.0: Start of a superloop demo feature - a counter that
 	* increments once per second and is shown identically on LCD lines 1 and
 	* 3, exercising the now-non-blocking write path from the main loop.
+	* Version 1.1.1: Implemented the counter. main()'s while(1) loop compares
+	* HAL_GetTick() against a running timestamp (no HAL_Delay - stays non-
+	* blocking); every 1000ms it formats the count with snprintf and rewrites
+	* line 1 (command1(0x80) + display_line(write1, ...)) and line 3
+	* (command2(0x80) + display_line(write2, ...)). Lines 2 and 4 are
+	* untouched, still showing display()'s original test text. Verified on
+	* hardware: lines 1/3 count up together once per second.
   *
   * Future Enhancements:
   *
@@ -72,7 +79,7 @@
 // Version identification using X.Y.Z (Major.Minor.Patch) Semantic Versioning method
 #define VER_MAJOR 1
 #define VER_MINOR 1
-#define VER_PATCH 0
+#define VER_PATCH 1
 
 
 

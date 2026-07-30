@@ -318,6 +318,17 @@ int main(void)
 	lcd_init();
 	display("line1 test", "line 2 test.......", "line 3 tesssssssst", "and line 4");
 
+	// Superloop counter demo: counts up once per second, shown identically on
+	// lines 1 and 3 (lines 2 and 4 keep whatever display() above put there).
+	uint32_t counter_value = 0;
+	uint32_t counter_last_tick = HAL_GetTick();
+	char counter_buf[12];
+	snprintf(counter_buf, sizeof(counter_buf), "%lu", (unsigned long)counter_value);
+	command1(0x80);				//return cursor to line 1 start (DDRAM address 0)
+	display_line(write1, counter_buf);
+	command2(0x80);				//return cursor to line 3 start (DDRAM address 0)
+	display_line(write2, counter_buf);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -326,6 +337,16 @@ int main(void)
   {
     /* USER CODE END WHILE */
     /* USER CODE BEGIN 3 */
+	  if (HAL_GetTick() - counter_last_tick >= 1000)
+	  {
+		  counter_last_tick += 1000;
+		  counter_value++;
+		  snprintf(counter_buf, sizeof(counter_buf), "%lu", (unsigned long)counter_value);
+		  command1(0x80);
+		  display_line(write1, counter_buf);
+		  command2(0x80);
+		  display_line(write2, counter_buf);
+	  }
   }
   /* USER CODE END 3 */
 }
