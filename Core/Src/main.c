@@ -38,6 +38,14 @@ typedef struct{
   uint8_t           count;
 } SafeGPIOBus_t;
 
+typedef enum { LCD_CTRL_1 = 0, LCD_CTRL_2 = 1, LCD_NUM_CTRL } LCD_Controller_t;
+
+typedef struct{
+  uint8_t          data;
+  uint8_t          rs;    // 0 = command, 1 = data/write (RW is always write, not stored)
+  LCD_Controller_t ctrl;
+} LCD_Op_t;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -68,6 +76,20 @@ const SafeGPIO_t LCDPins[] =
 };
 
 SafeGPIOBus_t LCDBus;
+
+#define LCD_QUEUE_SIZE 256   // entries, not bytes; comfortably covers a full 160-char display() burst
+
+static volatile LCD_Op_t lcd_queue[LCD_QUEUE_SIZE];
+static volatile uint16_t lcd_queue_head = 0;   // producer-owned (command1/2, write1/2)
+static volatile uint16_t lcd_queue_tail = 0;   // consumer-owned (LCD_Service, runs in SysTick ISR)
+static volatile uint32_t lcd_busy_until[LCD_NUM_CTRL]; // HAL_GetTick() timestamps, one per controller
+
+// Reuses the existing SafeGPIO_t struct already used for LCDPins[]
+static const SafeGPIO_t lcd_enb_pin[LCD_NUM_CTRL] =
+{
+  { nLCD_ENB1_GPIO_Port, nLCD_ENB1_Pin },
+  { nLCD_ENB2_GPIO_Port, nLCD_ENB2_Pin },
+};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -100,50 +122,82 @@ static inline void LCD_ShortDelay(void)
 
 // Strobes an LCD controller's enable line: idle low, pulse high, back to idle low.
 // Replaces the original F-series TIM8 one-pulse-mode PWM trick with plain GPIO.
-//
-// The trailing HAL_Delay(2) is not part of the E pulse itself - it's the HD44780's
-// required instruction execution time before the SAME controller can accept another
-// command (~37-43us for most instructions, ~1.52ms for Clear Display/Return Home).
-// lcd_init()/display() chain commands back-to-back with no delay of their own, so
-// this has to cover the worst case (Clear Display) every time.
+// Only covers the E pulse width itself - the required post-command settle time is
+// handled by LCD_Service()'s lcd_busy_until scheduling below, not blocked on here.
 static void LCD_Strobe(GPIO_TypeDef *port, uint16_t pin)
 {
 	HAL_GPIO_WritePin(port, pin, GPIO_PIN_SET);
 	LCD_ShortDelay();
 	HAL_GPIO_WritePin(port, pin, GPIO_PIN_RESET);
-	HAL_Delay(2);
+}
+
+// Producer side: enqueues a command/data byte for a controller and returns immediately.
+// Called only from main-line code (never from LCD_Service/the SysTick ISR), so it's the
+// sole writer of lcd_queue_head - matches the single-writer-per-index scheme retarget.c
+// already uses for its UART TX/RX ring buffers. Silently drops on a full queue, same
+// policy as retarget.c's RX overflow handling.
+static int LCD_Enqueue(LCD_Controller_t ctrl, uint8_t rs, uint8_t data)
+{
+	uint16_t next_head = (lcd_queue_head + 1) % LCD_QUEUE_SIZE;
+	if (next_head == lcd_queue_tail) { return 0; }	// queue full, drop
+	lcd_queue[lcd_queue_head].data = data;
+	lcd_queue[lcd_queue_head].rs   = rs;
+	lcd_queue[lcd_queue_head].ctrl = ctrl;
+	lcd_queue_head = next_head;
+	return 1;
+}
+
+// Consumer side: call once per SysTick tick (wired up in stm32c0xx_it.c's SysTick_Handler).
+// Drains one ready queue entry per call, respecting each controller's independent
+// instruction-execution settle time (~37-43us typical, ~1.52ms after Clear Display/
+// Return Home - rounded up to the nearest 1ms tick since that's this design's timing
+// granularity).
+void LCD_Service(void)
+{
+	if (lcd_queue_head == lcd_queue_tail) { return; }	// empty
+
+	LCD_Op_t op = lcd_queue[lcd_queue_tail];	// struct copy, single volatile read
+	if (HAL_GetTick() < lcd_busy_until[op.ctrl]) { return; }	// target controller still settling
+
+	SafeGPIOBus_Write(&LCDBus, op.data);
+	HAL_GPIO_WritePin(LCD_RS_GPIO_Port, LCD_RS_Pin, op.rs ? GPIO_PIN_SET : GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET);
+	LCD_Strobe(lcd_enb_pin[op.ctrl].port, lcd_enb_pin[op.ctrl].pin);
+
+	int long_settle = (op.rs == 0) && (op.data == 0x01 || (op.data & 0xFE) == 0x02); // Clear Display / Return Home
+	lcd_busy_until[op.ctrl] = HAL_GetTick() + (long_settle ? 2 : 1);
+
+	lcd_queue_tail = (lcd_queue_tail + 1) % LCD_QUEUE_SIZE;
+}
+
+// True once the queue is empty and both controllers are past their settle time - i.e.
+// everything enqueued so far has actually been written to the LCD. Not used yet; a
+// hook for the future non-blocking lcd_init() rework.
+int LCD_Idle(void)
+{
+	return (lcd_queue_head == lcd_queue_tail)
+	    && HAL_GetTick() >= lcd_busy_until[LCD_CTRL_1]
+	    && HAL_GetTick() >= lcd_busy_until[LCD_CTRL_2];
 }
 
 void command1(uint8_t InputData)	//command for LCD lines 1&2
 {
-	SafeGPIOBus_Write(&LCDBus, InputData);  //write data to LCD bus 
-	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_RESET); //Set instr. register (RS) low for command
-	HAL_GPIO_WritePin (LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET); //Set dir. register (RW) low for write
-	LCD_Strobe(nLCD_ENB1_GPIO_Port, nLCD_ENB1_Pin); //Pulse ENB1 to strobe the data into LCD controller 1
+	LCD_Enqueue(LCD_CTRL_1, 0, InputData);
 }
 
 void command2(uint8_t InputData)	//command for LCD lines 3&4
 {
-	SafeGPIOBus_Write(&LCDBus, InputData);  //write data to LCD bus
-	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_RESET); //Set instr. register (RS) low for command
-	HAL_GPIO_WritePin (LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET); //Set dir. register (RW) low for write
-	LCD_Strobe(nLCD_ENB2_GPIO_Port, nLCD_ENB2_Pin); //Pulse ENB2 to strobe the data into LCD controller 2
+	LCD_Enqueue(LCD_CTRL_2, 0, InputData);
 }
 
 void write1(uint8_t InputData)	//write data on lines 1&2
 {
-	SafeGPIOBus_Write(&LCDBus, InputData);  //write data to LCD bus
-	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_SET); //Set instr. register (RS) high for data
-	HAL_GPIO_WritePin (LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET); //Set dir. register (RW) low for write
-	LCD_Strobe(nLCD_ENB1_GPIO_Port, nLCD_ENB1_Pin); //Pulse ENB1 to strobe the data into LCD controller 1
+	LCD_Enqueue(LCD_CTRL_1, 1, InputData);
 }
 
 void write2(uint8_t InputData)	//write data on lines 3&4
 {
-	SafeGPIOBus_Write(&LCDBus, InputData);  //write data to LCD bus
-	HAL_GPIO_WritePin (LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_SET); //Set instr. register (RS) high for data
-	HAL_GPIO_WritePin (LCD_RW_GPIO_Port, LCD_RW_Pin, GPIO_PIN_RESET); //Set dir. register (RW) low for write
-	LCD_Strobe(nLCD_ENB2_GPIO_Port, nLCD_ENB2_Pin); //Pulse ENB2 to strobe the data into LCD controller 2
+	LCD_Enqueue(LCD_CTRL_2, 1, InputData);
 }
 
 void lcd_init()

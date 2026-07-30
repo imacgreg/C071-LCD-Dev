@@ -46,6 +46,19 @@
 	* display) is blocking throughout - LCD_Strobe's HAL_Delay(2) and the
 	* HAL_Delay() calls in lcd_init() all stall the CPU in place. Major version
 	* bump to mark that the driver's calling convention is expected to change.
+	* Version 1.0.1: command1/command2/write1/write2 are now non-blocking -
+	* they enqueue onto a ring buffer (lcd_queue, mirroring retarget.c's UART
+	* TX/RX buffer style) and return immediately. LCD_Service(), called once
+	* per ms from SysTick_Handler, drains the queue: one entry at a time, per
+	* controller, waiting out that controller's HD44780 instruction-execution
+	* time (1ms normally, 2ms after Clear Display/Return Home) before issuing
+	* the next one. LCD_Strobe() now only does the E pulse itself. display()
+	* returns in ~1ms instead of blocking for up to ~320ms; the actual writes
+	* stream out over the following ~100-160ms in the background.
+	* lcd_init()'s own HAL_Delay-based power-up sequencing is untouched - it
+	* still works because interrupts (and so SysTick/LCD_Service) keep
+	* running during HAL_Delay's busy-wait - and remains blocking for now,
+	* to be revisited in a later pass.
   *
   * Future Enhancements:
   *
@@ -56,7 +69,7 @@
 // Version identification using X.Y.Z (Major.Minor.Patch) Semantic Versioning method
 #define VER_MAJOR 1
 #define VER_MINOR 0
-#define VER_PATCH 0
+#define VER_PATCH 1
 
 
 

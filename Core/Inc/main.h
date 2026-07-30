@@ -53,6 +53,7 @@ extern "C" {
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
+void LCD_Service(void);   // drains the LCD write queue; called once per tick from SysTick_Handler
 
 /* USER CODE END EFP */
 
