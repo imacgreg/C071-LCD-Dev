@@ -69,6 +69,11 @@
 	* (command2(0x80) + display_line(write2, ...)). Lines 2 and 4 are
 	* untouched, still showing display()'s original test text. Verified on
 	* hardware: lines 1/3 count up together once per second.
+	* Version 1.2.0: Start of modularizing the LCD driver out of main.c into
+	* its own reusable module, so it can be dropped into other STM32
+	* projects rather than hand-copied/adapted each time. Will need a public
+	* init/setup function taking the project's GPIO pin/port wiring, called
+	* after peripheral init, since pin assignments are project-specific.
   *
   * Future Enhancements:
   *
@@ -78,8 +83,8 @@
 #define	PROG_NAME "DM Solutions LCD Test Code - "
 // Version identification using X.Y.Z (Major.Minor.Patch) Semantic Versioning method
 #define VER_MAJOR 1
-#define VER_MINOR 1
-#define VER_PATCH 1
+#define VER_MINOR 2
+#define VER_PATCH 0
 
 
 
