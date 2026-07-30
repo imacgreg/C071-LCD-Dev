@@ -41,6 +41,11 @@
 	* F-series detritus (dead SafeOutputPortE function, stale Port E/PC8/PC9
 	* comments, unused lcd_data globals/locals) and the printf/heartbeat
 	* diagnostics added during hardware bring-up.
+	* Version 1.0.0: Start of a non-blocking rework of this same LCD driver/
+	* functionality. The 0.x line (command1/command2/write1/write2/lcd_init/
+	* display) is blocking throughout - LCD_Strobe's HAL_Delay(2) and the
+	* HAL_Delay() calls in lcd_init() all stall the CPU in place. Major version
+	* bump to mark that the driver's calling convention is expected to change.
   *
   * Future Enhancements:
   *
@@ -49,9 +54,9 @@
 // Program name
 #define	PROG_NAME "DM Solutions LCD Test Code - "
 // Version identification using X.Y.Z (Major.Minor.Patch) Semantic Versioning method
-#define VER_MAJOR 0
-#define VER_MINOR 2
-#define VER_PATCH 1
+#define VER_MAJOR 1
+#define VER_MINOR 0
+#define VER_PATCH 0
 
 
 
