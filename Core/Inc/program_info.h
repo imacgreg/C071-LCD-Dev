@@ -59,6 +59,9 @@
 	* still works because interrupts (and so SysTick/LCD_Service) keep
 	* running during HAL_Delay's busy-wait - and remains blocking for now,
 	* to be revisited in a later pass.
+	* Version 1.1.0: Start of a superloop demo feature - a counter that
+	* increments once per second and is shown identically on LCD lines 1 and
+	* 3, exercising the now-non-blocking write path from the main loop.
   *
   * Future Enhancements:
   *
@@ -68,8 +71,8 @@
 #define	PROG_NAME "DM Solutions LCD Test Code - "
 // Version identification using X.Y.Z (Major.Minor.Patch) Semantic Versioning method
 #define VER_MAJOR 1
-#define VER_MINOR 0
-#define VER_PATCH 1
+#define VER_MINOR 1
+#define VER_PATCH 0
 
 
 
