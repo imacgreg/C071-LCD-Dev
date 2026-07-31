@@ -85,6 +85,17 @@
 	* single-line updates (used by main.c's counter demo). Behavior is
 	* otherwise unchanged - still 2 controllers / 4 lines of 40 chars, only
 	* the pin wiring is now configurable. Verified on hardware: no regression.
+	* Version 1.2.2: Made LCD_Service() fully non-blocking - removed the last
+	* busy-wait (LCD_ShortDelay/LCD_Strobe). The E pulse is now split across
+	* two LCD_Service() calls via a one-bit state flag (lcd_e_high) instead
+	* of held with a delay loop: one call raises E and returns immediately,
+	* the next brings it low and starts the normal settle countdown. Holding
+	* E high for up to ~1ms instead of ~1us is harmless (no documented
+	* maximum HD44780 pulse width). Cost: a full LCD_Display() burst now
+	* takes roughly twice as long to drain (~200-320ms vs ~100-160ms), traded
+	* for LCD_Service() never blocking anything, even for a few microseconds.
+	* Verified on hardware: no regression, slower visible "paint-in" on boot
+	* as expected.
   *
   * Future Enhancements:
   *
@@ -95,7 +106,7 @@
 // Version identification using X.Y.Z (Major.Minor.Patch) Semantic Versioning method
 #define VER_MAJOR 1
 #define VER_MINOR 2
-#define VER_PATCH 1
+#define VER_PATCH 2
 
 
 

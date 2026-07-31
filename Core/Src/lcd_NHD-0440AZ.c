@@ -26,14 +26,10 @@ static volatile uint16_t lcd_queue_head = 0;   // producer-owned (LCD_Command1/2
 static volatile uint16_t lcd_queue_tail = 0;   // consumer-owned (LCD_Service, runs in SysTick ISR)
 static volatile uint32_t lcd_busy_until[LCD_NUM_CTRL]; // HAL_GetTick() timestamps, one per controller
 
-// Busy-wait of a few hundred ns to ~1us. Cortex-M0+ has no DWT cycle counter, so this is
-// a calibrated NOP-count loop rather than a precise timer, with margin above the
-// HD44780's ~450-500ns minimum enable pulse width. Calibrated for a ~12MHz core clock;
-// re-check this if porting to a project running at a very different SYSCLK.
-static inline void LCD_ShortDelay(void)
-{
-	for (volatile uint32_t i = 0; i < 20; i++) { __NOP(); }
-}
+// 1 while E is currently held high for lcd_queue[lcd_queue_tail] (see LCD_Service): the E
+// pulse itself is split across two ticks instead of a busy-wait, so LCD_Service never
+// blocks even for the ~1us the HD44780 needs E held high.
+static volatile int lcd_e_high = 0;
 
 // Sets a data-bus pin's mode directly via MODER, without disturbing OTYPER (already
 // configured open-drain by LCD_Init()). Avoids the overhead of a full HAL_GPIO_Init()
@@ -67,16 +63,6 @@ static void LCD_BusWrite(uint8_t data)
 			LCD_BusPinSetOutput(lcd_config.data[i].port, lcd_config.data[i].pin);
 		}
 	}
-}
-
-// Strobes an LCD controller's enable line: idle low, pulse high, back to idle low.
-// Only covers the E pulse width itself - the required post-command settle time is
-// handled by LCD_Service()'s lcd_busy_until scheduling below, not blocked on here.
-static void LCD_Strobe(GPIO_TypeDef *port, uint16_t pin)
-{
-	HAL_GPIO_WritePin(port, pin, GPIO_PIN_SET);
-	LCD_ShortDelay();
-	HAL_GPIO_WritePin(port, pin, GPIO_PIN_RESET);
 }
 
 // Producer side: enqueues a command/data byte for a controller and returns immediately.
@@ -117,14 +103,38 @@ void LCD_Init(const LCD_Config_t *config)
 
 	lcd_queue_head = lcd_queue_tail = 0;
 	lcd_busy_until[LCD_CTRL_1] = lcd_busy_until[LCD_CTRL_2] = 0;
+	lcd_e_high = 0;
 }
 
-// Consumer side: call once per SysTick tick. Drains one ready queue entry per call,
-// respecting each controller's independent instruction-execution settle time (~37-43us
-// typical, ~1.52ms after Clear Display/Return Home - rounded up to the nearest 1ms tick
-// since that's this design's timing granularity).
+// Consumer side: call once per SysTick tick. Never blocks or busy-waits - the E pulse is
+// split across two calls instead of held with a delay loop:
+//   - If E is currently high (from the previous call), bring it low and start this
+//     controller's instruction-execution settle countdown (~37-43us typical, ~1.52ms
+//     after Clear Display/Return Home - rounded up to whole 1ms ticks either way, since
+//     that's this design's timing granularity), then advance the queue.
+//   - Otherwise, if the head-of-queue entry's controller is done settling, set up the
+//     data bus/RS/RW and raise E - it's brought low again on the *next* call. Holding E
+//     high for up to ~1ms instead of the ~1us minimum is harmless for the HD44780; there
+//     is no documented maximum pulse width.
+// A full LCD_Display() burst (160 chars) therefore takes roughly twice as long to drain
+// as the old busy-wait version (~200-320ms instead of ~100-160ms), in exchange for
+// LCD_Service() never blocking anything, even for a few microseconds.
 void LCD_Service(void)
 {
+	if (lcd_e_high)
+	{
+		LCD_Op_t op = lcd_queue[lcd_queue_tail];
+		const LCD_GPIO_t *enb = (op.ctrl == LCD_CTRL_1) ? &lcd_config.enb1 : &lcd_config.enb2;
+		HAL_GPIO_WritePin(enb->port, enb->pin, GPIO_PIN_RESET);
+
+		int long_settle = (op.rs == 0) && (op.data == 0x01 || (op.data & 0xFE) == 0x02); // Clear Display / Return Home
+		lcd_busy_until[op.ctrl] = HAL_GetTick() + (long_settle ? 2 : 1);
+
+		lcd_queue_tail = (lcd_queue_tail + 1) % LCD_QUEUE_SIZE;
+		lcd_e_high = 0;
+		return;
+	}
+
 	if (lcd_queue_head == lcd_queue_tail) { return; }	// empty
 
 	LCD_Op_t op = lcd_queue[lcd_queue_tail];	// struct copy, single volatile read
@@ -134,12 +144,8 @@ void LCD_Service(void)
 	HAL_GPIO_WritePin(lcd_config.rs.port, lcd_config.rs.pin, op.rs ? GPIO_PIN_SET : GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(lcd_config.rw.port, lcd_config.rw.pin, GPIO_PIN_RESET);
 	const LCD_GPIO_t *enb = (op.ctrl == LCD_CTRL_1) ? &lcd_config.enb1 : &lcd_config.enb2;
-	LCD_Strobe(enb->port, enb->pin);
-
-	int long_settle = (op.rs == 0) && (op.data == 0x01 || (op.data & 0xFE) == 0x02); // Clear Display / Return Home
-	lcd_busy_until[op.ctrl] = HAL_GetTick() + (long_settle ? 2 : 1);
-
-	lcd_queue_tail = (lcd_queue_tail + 1) % LCD_QUEUE_SIZE;
+	HAL_GPIO_WritePin(enb->port, enb->pin, GPIO_PIN_SET);	// E is brought low on the next LCD_Service() call
+	lcd_e_high = 1;
 }
 
 int LCD_Idle(void)
