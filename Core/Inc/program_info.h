@@ -106,6 +106,12 @@
 	* `git submodule update --init --recursive` (or clone with
 	* --recurse-submodules) or the build will fail with undefined-reference
 	* linker errors.
+	* Version 1.2.4: Established a versioning convention for stm32-modules:
+	* each module carries its own _VER_MAJOR/_VER_MINOR/_VER_PATCH macros and
+	* version-history comment block, tagged in that repo as
+	* <module-name>-vX.Y.Z. Pinned this project's submodule to the first
+	* such tag, lcd_NHD-0440AZ-v1.0.0. No functional change - identical
+	* binary to 1.2.3 (only added unused version macros/comments).
   *
   * Future Enhancements:
   *
@@ -116,7 +122,7 @@
 // Version identification using X.Y.Z (Major.Minor.Patch) Semantic Versioning method
 #define VER_MAJOR 1
 #define VER_MINOR 2
-#define VER_PATCH 3
+#define VER_PATCH 4
 
 
 
