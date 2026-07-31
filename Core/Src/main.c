@@ -101,7 +101,10 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   RetargetInit(&huart2);
-  printf("C071 LCD DEV\n\r");
+
+  Version_Display();
+  printf("lcd_NHD-0440AZ v%u.%u.%u\n\r", 
+          LCD_NHD0440AZ_VER_MAJOR, LCD_NHD0440AZ_VER_MINOR, LCD_NHD0440AZ_VER_PATCH);
 
 	const LCD_Config_t lcd_config = {
 		.data = {

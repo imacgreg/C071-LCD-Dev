@@ -75,7 +75,6 @@ endif
 ######################################
 # C sources
 C_SOURCES =  \
-Modules/stm32-modules/lcd_NHD-0440AZ/Src/lcd_NHD-0440AZ.c \
 Core/Src/main.c \
 Core/Src/retarget.c \
 Core/Src/stm32c0xx_hal_msp.c \
@@ -96,7 +95,8 @@ Drivers/STM32C0xx_HAL_Driver/Src/stm32c0xx_hal_pwr_ex.c \
 Drivers/STM32C0xx_HAL_Driver/Src/stm32c0xx_hal_rcc.c \
 Drivers/STM32C0xx_HAL_Driver/Src/stm32c0xx_hal_rcc_ex.c \
 Drivers/STM32C0xx_HAL_Driver/Src/stm32c0xx_hal_uart.c \
-Drivers/STM32C0xx_HAL_Driver/Src/stm32c0xx_hal_uart_ex.c
+Drivers/STM32C0xx_HAL_Driver/Src/stm32c0xx_hal_uart_ex.c \
+Modules/stm32-modules/lcd_NHD-0440AZ/Src/lcd_NHD-0440AZ.c
 
 
 CXX_SOURCES = \
@@ -190,11 +190,11 @@ AS_INCLUDES = \
 # C includes
 C_INCLUDES =  \
 -ICore/Inc \
--IModules/stm32-modules/lcd_NHD-0440AZ/Inc \
 -IDrivers/CMSIS/Device/ST/STM32C0xx/Include \
 -IDrivers/CMSIS/Include \
 -IDrivers/STM32C0xx_HAL_Driver/Inc \
--IDrivers/STM32C0xx_HAL_Driver/Inc/Legacy
+-IDrivers/STM32C0xx_HAL_Driver/Inc/Legacy \
+-IModules/stm32-modules/lcd_NHD-0440AZ/Inc
 
 
 

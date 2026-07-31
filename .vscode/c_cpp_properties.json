@@ -7,7 +7,8 @@
         "Drivers/CMSIS/Device/ST/STM32C0xx/Include",
         "Drivers/CMSIS/Include",
         "Drivers/STM32C0xx_HAL_Driver/Inc",
-        "Drivers/STM32C0xx_HAL_Driver/Inc/Legacy"
+        "Drivers/STM32C0xx_HAL_Driver/Inc/Legacy",
+        "Modules/stm32-modules/lcd_NHD-0440AZ/Inc"
       ],
       "defines": [
         "STM32C071xx",
