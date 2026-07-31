@@ -10,12 +10,16 @@ interface (8 data lines D0-D7, RS, RW, and two active-low enable lines `nLCD_ENB
 HD44780-style LCD controllers muxed onto one shared bus, together forming a 40x4 character display) plus USART2
 and the two Nucleo user LEDs (LD1/LD2).
 
-The LCD driver itself lives in [Core/Src/lcd_NHD-0440AZ.c](Core/Src/lcd_NHD-0440AZ.c) /
-[Core/Inc/lcd_NHD-0440AZ.h](Core/Inc/lcd_NHD-0440AZ.h) — a standalone, portable module (see that section below).
-[Core/Src/main.c](Core/Src/main.c) is just this project's test/demo code wiring the module up to its actual pin
-assignments and showing a counter demo; see [Core/Inc/program_info.h](Core/Inc/program_info.h) for the full
-bring-up changelog. The 8-bit data bus and RS/RW/ENB1/ENB2 are bit-banged via plain GPIO — no timer or DMA is
-used for LCD timing.
+The LCD driver itself lives in a separate [imacgreg/stm32-modules](https://github.com/imacgreg/stm32-modules)
+repo, pulled in here as a git submodule at `Modules/stm32-modules` (see that section below) — a standalone,
+portable module. [Core/Src/main.c](Core/Src/main.c) is just this project's test/demo code wiring the module up
+to its actual pin assignments and showing a counter demo; see [Core/Inc/program_info.h](Core/Inc/program_info.h)
+for the full bring-up changelog. The 8-bit data bus and RS/RW/ENB1/ENB2 are bit-banged via plain GPIO — no timer
+or DMA is used for LCD timing.
+
+**This repo uses a git submodule** (`Modules/stm32-modules`) — after cloning, run
+`git submodule update --init --recursive` (or clone with `--recurse-submodules`) or the LCD module's source
+won't be present and the build will fail with undefined-reference linker errors.
 
 Hardware note: Nucleo PB3 (wired here as `LCD_D2`) is also the board's TRACESWO debug pin, connected via a
 solder bridge/jumper. That jumper had to be removed to let PB3 drive the LCD data line correctly — ST-Link
@@ -63,16 +67,21 @@ generates/maintains `STM32-for-VSCode.config.yaml`, `STM32Make.make`, `openocd.c
   (115200 8N1), and the application code in the `USER CODE` blocks: builds an `LCD_Config_t` from this project's
   pin macros, calls `LCD_Init()`/`LCD_PowerOn()`/`LCD_Display()` from the LCD module (see below), and runs a
   superloop counter demo on lines 1/3 via `LCD_DisplayLine1()`/`LCD_DisplayLine3()`.
-- **`Core/Inc/lcd_NHD-0440AZ.h`** / **`Core/Src/lcd_NHD-0440AZ.c`** are the portable LCD driver module — written to
-  be dropped into other STM32 projects using the same Newhaven NHD-0440AZ-style 40x4 display (two HD44780
-  controllers muxed onto one shared 8-bit bus) without modification. A host project builds an `LCD_Config_t`
-  (GPIO port/pin for each of D0-D7, RS, RW, ENB1, ENB2) and calls `LCD_Init(&config)` after its own GPIO port
-  clocks are enabled — `LCD_Init()` configures pin modes itself, it doesn't rely on the host's CubeMX-generated
-  `MX_GPIO_Init()` having already done so. `LCD_PowerOn()` sends the HD44780 power-on/reset sequence (blocking,
-  via `HAL_Delay`). `LCD_Command1`/`LCD_Command2`/`LCD_Write1`/`LCD_Write2` and `LCD_Display*` are non-blocking:
-  they enqueue onto an internal ring buffer, and the host project must call `LCD_Service()` at least once per
-  SysTick tick (wired into `stm32c0xx_it.c`'s `SysTick_Handler` here) to actually drain it — see the "non-blocking
-  write path" entry in `program_info.h`'s changelog for why.
+- **`Modules/stm32-modules/lcd_NHD-0440AZ/Inc/lcd_NHD-0440AZ.h`** / **`.../Src/lcd_NHD-0440AZ.c`** (a git submodule
+  pointing at [imacgreg/stm32-modules](https://github.com/imacgreg/stm32-modules), a personal toolbox of reusable
+  STM32 modules — this is the first one in it) are the portable LCD driver — written to be dropped into other
+  STM32 projects using the same Newhaven NHD-0440AZ-style 40x4 display (two HD44780 controllers muxed onto one
+  shared 8-bit bus) without modification. A host project builds an `LCD_Config_t` (GPIO port/pin for each of
+  D0-D7, RS, RW, ENB1, ENB2) and calls `LCD_Init(&config)` after its own GPIO port clocks are enabled —
+  `LCD_Init()` configures pin modes itself, it doesn't rely on the host's CubeMX-generated `MX_GPIO_Init()`
+  having already done so. `LCD_PowerOn()` sends the HD44780 power-on/reset sequence (blocking, via `HAL_Delay`).
+  `LCD_Command1`/`LCD_Command2`/`LCD_Write1`/`LCD_Write2` and `LCD_Display*` are non-blocking: they enqueue onto
+  an internal ring buffer, and the host project must call `LCD_Service()` at least once per SysTick tick (wired
+  into `stm32c0xx_it.c`'s `SysTick_Handler` here) to actually drain it — see the "non-blocking write path" entry
+  in `program_info.h`'s changelog for why. `LCD_Service()` itself never blocks or busy-waits (see that changelog
+  too) - fixing/improving the module means editing it in its own repo/submodule checkout, not in this project.
+  To change which module version this project uses: `cd Modules/stm32-modules && git checkout <ref>`, then
+  commit the updated submodule pointer here (or `git submodule update --remote` to track its latest commit).
 - **`Drivers/CMSIS`** and **`Drivers/STM32C0xx_HAL_Driver`** are the vendored ARM CMSIS and ST HAL sources — treat as
   third-party/vendor code, not to be modified for feature work.
 - **`startup_stm32c071xx.s`** / **`STM32C071XX_FLASH.ld`** are the CubeMX-generated startup assembly and linker
@@ -85,4 +94,5 @@ generates/maintains `STM32-for-VSCode.config.yaml`, `STM32Make.make`, `openocd.c
   `Retarget_TryGetChar()` for non-blocking RX polling instead of `getchar()`/`scanf()` if the main loop can't block;
   the two share one RX buffer/consumer index, so don't mix both styles in the same part of the application.
 - Only USART2, GPIO, and NVIC/SysTick are configured — no timer or DMA peripheral is used; LCD data/RS/RW/ENB
-  timing is all bit-banged GPIO plus `HAL_Delay`/busy-wait, not a hardware timer.
+  timing is all bit-banged GPIO scheduled off the SysTick tick, not a hardware timer or busy-wait (`LCD_PowerOn()`
+  is the one exception - it's still `HAL_Delay`-based/blocking, deferred for a later pass).

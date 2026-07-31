@@ -96,6 +96,16 @@
 	* for LCD_Service() never blocking anything, even for a few microseconds.
 	* Verified on hardware: no regression, slower visible "paint-in" on boot
 	* as expected.
+	* Version 1.2.3: Moved the lcd_NHD-0440AZ module out of this repo entirely,
+	* into its own personal toolbox repo (imacgreg/stm32-modules), pulled in
+	* here as a git submodule at Modules/stm32-modules. Lets the module be
+	* improved in one place and reused across other STM32 projects via
+	* git submodule instead of copy-pasting a snapshot of it each time.
+	* No functional change - identical binary size/behavior to 1.2.2.
+	* IMPORTANT: after cloning this repo, run
+	* `git submodule update --init --recursive` (or clone with
+	* --recurse-submodules) or the build will fail with undefined-reference
+	* linker errors.
   *
   * Future Enhancements:
   *
@@ -106,7 +116,7 @@
 // Version identification using X.Y.Z (Major.Minor.Patch) Semantic Versioning method
 #define VER_MAJOR 1
 #define VER_MINOR 2
-#define VER_PATCH 2
+#define VER_PATCH 3
 
 
 

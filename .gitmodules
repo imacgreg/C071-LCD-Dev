@@ -1,0 +1,3 @@
+[submodule "Modules/stm32-modules"]
+	path = Modules/stm32-modules
+	url = https://github.com/imacgreg/stm32-modules.git

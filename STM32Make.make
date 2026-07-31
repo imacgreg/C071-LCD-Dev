@@ -75,7 +75,7 @@ endif
 ######################################
 # C sources
 C_SOURCES =  \
-Core/Src/lcd_NHD-0440AZ.c \
+Modules/stm32-modules/lcd_NHD-0440AZ/Src/lcd_NHD-0440AZ.c \
 Core/Src/main.c \
 Core/Src/retarget.c \
 Core/Src/stm32c0xx_hal_msp.c \
@@ -190,6 +190,7 @@ AS_INCLUDES = \
 # C includes
 C_INCLUDES =  \
 -ICore/Inc \
+-IModules/stm32-modules/lcd_NHD-0440AZ/Inc \
 -IDrivers/CMSIS/Device/ST/STM32C0xx/Include \
 -IDrivers/CMSIS/Include \
 -IDrivers/STM32C0xx_HAL_Driver/Inc \
